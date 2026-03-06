@@ -84,6 +84,24 @@ cd rust
 cargo test
 ```
 
+## Bindings
+
+Additional bindings live under `bindings/`:
+
+- `bindings/cpp/` — header-only C++ wrapper, example, and smoke-test;
+- `bindings/D/` — D module, example, and smoke-test;
+- `bindings/Makefile` — convenience targets for building and running binding checks.
+
+Useful commands:
+
+```sh
+cd bindings
+make cpp-test
+make d-test-dmd
+make d-test-ldc2
+make all
+```
+
 ## Debian Package
 
 The repository includes a packaging helper for Debian-based systems:
