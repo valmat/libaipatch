@@ -2,6 +2,10 @@
 
 Upstream repository: `codex`
 
+Upstream public references:
+- Product page: https://chatgpt.com/codex
+- Source repository: https://github.com/openai/codex
+
 Upstream component: `codex-rs/apply-patch`
 
 Upstream revision: `24a2d0c696d8b1b3d0c137f8e67126b33b07d189`

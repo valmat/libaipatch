@@ -90,7 +90,7 @@ Additional bindings live under `bindings/`:
 
 - `bindings/cpp/` — header-only C++ wrapper, example, and smoke-test;
 - `bindings/D/` — D module, example, and smoke-test;
-- `bindings/Makefile` — convenience targets for building and running binding checks; binaries are written to `bindings/build/`.
+- `bindings/Makefile` — convenience targets for building and running binding checks; binaries are written to `bindings/build/cpp/`, `bindings/build/dmd/`, and `bindings/build/ldc2/`.
 
 Useful commands:
 
@@ -258,6 +258,24 @@ Borrowed materials and fixture provenance are documented in:
 
 - `third_party/codex_apply_patch/SOURCES.md`
 - `third_party/codex_apply_patch/NOTICE.md`
+
+Upstream Codex references:
+
+- product page: https://chatgpt.com/codex
+- source repository: https://github.com/openai/codex
+
+## Project Authorship and Process
+
+This project is published by the repository owner, who contributed the
+specification, architectural direction, review feedback, and quality oversight.
+
+The implementation work in this repository was produced with OpenAI Codex
+(Codex CLI) using GPT-5.4 during an interactive development session driven by
+that specification and review process.
+
+That attribution is intentional. The goal is to be explicit that the code was
+not hand-written solely by the repository owner, while also preserving the
+owner's real contribution in defining the contract and supervising quality.
 
 These records describe:
 

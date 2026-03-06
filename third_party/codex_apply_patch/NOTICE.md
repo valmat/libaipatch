@@ -9,6 +9,10 @@ Upstream project:
 - Copyright 2025 OpenAI
 - License: Apache License 2.0
 
+Public references:
+- Product page: https://chatgpt.com/codex
+- Source repository: https://github.com/openai/codex
+
 At the time of this scaffold, the copied materials are limited to:
 - upstream Rust source snapshots kept for later adaptation;
 - upstream invocation and standalone CLI reference sources kept for context only;
