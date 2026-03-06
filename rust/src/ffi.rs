@@ -76,20 +76,22 @@ fn register_owned_message(ptr: *mut c_char) {
     if ptr.is_null() {
         return;
     }
-    owned_messages()
-        .lock()
-        .expect("owned message registry poisoned")
-        .insert(ptr as usize);
+    let mut registry = match owned_messages().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    registry.insert(ptr as usize);
 }
 
 fn take_owned_message(ptr: *mut c_char) -> bool {
     if ptr.is_null() {
         return false;
     }
-    owned_messages()
-        .lock()
-        .expect("owned message registry poisoned")
-        .remove(&(ptr as usize))
+    let mut registry = match owned_messages().lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    registry.remove(&(ptr as usize))
 }
 
 unsafe fn free_owned_message_if_tracked(ptr: *mut c_char) {
