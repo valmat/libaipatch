@@ -10,3 +10,6 @@ pub mod parser;
 pub mod paths;
 pub(crate) mod seek_sequence;
 pub mod write_ops;
+
+#[cfg(test)]
+pub(crate) mod test_support;
