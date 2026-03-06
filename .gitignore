@@ -1,0 +1,59 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Rust
+/target/
+**/*.rs.bk
+
+# C / C++ build outputs
+/build/
+/build-*/
+/cmake-build-*/
+/CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+Makefile
+*.d
+*.gcno
+*.gcda
+*.gcov
+*.profraw
+*.profdata
+
+# Generic native artifacts
+*.o
+*.obj
+*.lo
+*.la
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.lib
+*.exp
+*.pdb
+*.exe
+*.out
+
+# D / dub
+.dub/
+dub.selections.json
+__dummy.html
+docs.json
+/tmp/
+/.dub/
+
+# Test / temp artifacts
+*.log
+*.tmp
+*.temp
+/tmp-*/
