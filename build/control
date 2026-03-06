@@ -1,0 +1,14 @@
+Package: %PACKAGE_NAME%
+Source: libaipatch
+Version: %VERSION%
+Maintainer: valmat <v.dmitriev@pnlfin.tech>
+Architecture: %ARCHITECTURE%
+Section: libdevel
+Priority: optional
+Installed-Size: %INSTALLED_SIZE%
+Description: Static C ABI library for applying Codex text patches
+ libaipatch provides a Rust-implemented static library and public C header
+ for validating and applying Codex-format text patches.
+ .
+ The package installs libaipatch.a and aipatch.h for local development
+ and FFI integration.
