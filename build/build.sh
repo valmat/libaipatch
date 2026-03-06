@@ -24,13 +24,18 @@ mkdir -p "$PKG_DIR/DEBIAN"
 mkdir -p "$PKG_DIR/usr/lib"
 mkdir -p "$PKG_DIR/usr/include"
 mkdir -p "$PKG_DIR/usr/share/doc/$PACKAGE_NAME"
+mkdir -p "$PKG_DIR/usr/share/doc/$PACKAGE_NAME/docs"
 
 cp "$RUST_DIR/target/release/libaipatch.a" "$PKG_DIR/usr/lib/libaipatch.a"
 cp "$PROJECT_ROOT/include/aipatch.h" "$PKG_DIR/usr/include/aipatch.h"
 cp "$PROJECT_ROOT/README.md" "$PKG_DIR/usr/share/doc/$PACKAGE_NAME/README.md"
 cp "$PROJECT_ROOT/LICENSE" "$PKG_DIR/usr/share/doc/$PACKAGE_NAME/copyright"
+cp "$PROJECT_ROOT/docs/agent_notes.md" "$PKG_DIR/usr/share/doc/$PACKAGE_NAME/docs/agent_notes.md"
+cp "$PROJECT_ROOT/docs/patch_format.md" "$PKG_DIR/usr/share/doc/$PACKAGE_NAME/docs/patch_format.md"
 
 gzip -n -f "$PKG_DIR/usr/share/doc/$PACKAGE_NAME/README.md"
+gzip -n -f "$PKG_DIR/usr/share/doc/$PACKAGE_NAME/docs/agent_notes.md"
+gzip -n -f "$PKG_DIR/usr/share/doc/$PACKAGE_NAME/docs/patch_format.md"
 
 INSTALLED_SIZE="$(du -sk "$PKG_DIR" | cut -f1)"
 
