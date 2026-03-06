@@ -9,6 +9,8 @@ Thumbs.db
 
 # Rust
 /target/
+/rust/target/
+/rust/Cargo.lock
 **/*.rs.bk
 
 # C / C++ build outputs
