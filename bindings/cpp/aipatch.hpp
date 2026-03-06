@@ -100,7 +100,7 @@ inline CallResult apply(std::string_view patch, std::string_view root_dir) {
     return CallResult{abi_status, Result(raw)};
 }
 
-inline std::string_view version() {
+inline std::string_view version() noexcept {
     return std::string_view(aipatch_version());
 }
 

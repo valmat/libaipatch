@@ -14,9 +14,14 @@ CPP_CXXFLAGS := -std=c++17 -Wall -Wextra -pedantic -I$(INCLUDE_DIR) -I$(CPP_DIR)
 DMD_LINK_FLAGS := $(addprefix -L,$(NATIVE_LIBS))
 LDC2_LINK_FLAGS := $(addprefix -L=,$(NATIVE_LIBS))
 
-.PHONY: all rust-release cpp-example cpp-test d-example-dmd d-test-dmd d-example-ldc2 d-test-ldc2 clean
+.PHONY: all examples rust-release cpp-example cpp-test d-example-dmd d-test-dmd d-example-ldc2 d-test-ldc2 clean
 
-all: cpp-test d-test-dmd d-test-ldc2
+# Default target: build & run both tests and examples.
+# Note: tests are intentionally silent on success.
+all: examples cpp-test d-test-dmd d-test-ldc2
+
+# Build & run examples
+examples: cpp-example d-example-dmd d-example-ldc2
 
 rust-release:
 	cd $(RUST_DIR) && cargo build --release
@@ -26,6 +31,7 @@ $(CPP_BUILD_DIR) $(DMD_BUILD_DIR) $(LDC2_BUILD_DIR):
 
 cpp-example: rust-release | $(CPP_BUILD_DIR)
 	$(CXX) $(CPP_CXXFLAGS) $(CPP_DIR)/examples/basic.cpp $(LIBAIPATCH) $(NATIVE_LIBS) -o $(CPP_BUILD_DIR)/basic
+	$(CPP_BUILD_DIR)/basic
 
 cpp-test: rust-release | $(CPP_BUILD_DIR)
 	$(CXX) $(CPP_CXXFLAGS) $(CPP_DIR)/tests/smoke.cpp $(LIBAIPATCH) $(NATIVE_LIBS) -o $(CPP_BUILD_DIR)/smoke
@@ -33,6 +39,7 @@ cpp-test: rust-release | $(CPP_BUILD_DIR)
 
 d-example-dmd: rust-release | $(DMD_BUILD_DIR)
 	dmd -i -I$(D_DIR)/source -of$(DMD_BUILD_DIR)/basic $(D_DIR)/examples/basic.d $(LIBAIPATCH) $(DMD_LINK_FLAGS)
+	$(DMD_BUILD_DIR)/basic
 
 d-test-dmd: rust-release | $(DMD_BUILD_DIR)
 	dmd -i -I$(D_DIR)/source -of$(DMD_BUILD_DIR)/smoke $(D_DIR)/tests/smoke.d $(LIBAIPATCH) $(DMD_LINK_FLAGS)
@@ -40,6 +47,7 @@ d-test-dmd: rust-release | $(DMD_BUILD_DIR)
 
 d-example-ldc2: rust-release | $(LDC2_BUILD_DIR)
 	ldc2 -i -I$(D_DIR)/source -of=$(LDC2_BUILD_DIR)/basic $(D_DIR)/examples/basic.d $(LIBAIPATCH) $(LDC2_LINK_FLAGS)
+	$(LDC2_BUILD_DIR)/basic
 
 d-test-ldc2: rust-release | $(LDC2_BUILD_DIR)
 	ldc2 -i -I$(D_DIR)/source -of=$(LDC2_BUILD_DIR)/smoke $(D_DIR)/tests/smoke.d $(LIBAIPATCH) $(LDC2_LINK_FLAGS)

@@ -9,7 +9,7 @@ import std.string : chomp;
 import std.conv : to;
 
 int main() {
-    const rootDir = buildPath("/tmp", "libaipatch-d-example-" ~ to!string(getpid()));
+    const rootDir = buildPath("/tmp", "libaipatch-d-example-" ~ getpid().to!string());
     mkdirRecurse(rootDir);
     scope(exit) rmdirRecurse(rootDir);
 
@@ -43,5 +43,6 @@ int main() {
     writeln("libaipatch version: ", libraryVersion());
     writeln("apply summary:\n", applyResult.message);
     writeln("file contents: ", contents);
+
     return 0;
 }
