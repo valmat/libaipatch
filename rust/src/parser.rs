@@ -208,11 +208,17 @@ fn parse_one_hunk(lines: &[&str], line_number: usize) -> Result<(Hunk, usize), P
         for add_line in &lines[1..] {
             if let Some(line_to_add) = add_line.strip_prefix('+') {
                 contents.push_str(line_to_add);
-                contents.push('\n');
+                contents.push(0x0A as char);
                 parsed_lines += 1;
             } else {
                 break;
             }
+        }
+        if parsed_lines == 1 {
+            return Err(InvalidHunkError {
+                message: format!("Add file hunk for path '{path}' is empty"),
+                line_number,
+            });
         }
         return Ok((
             Hunk::AddFile {
@@ -438,6 +444,13 @@ mod tests {
         let patch = "*** Begin Patch\n*** End Patch";
         let result = parse_patch(patch).unwrap();
         assert_eq!(result.hunks.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_empty_add_file_rejected() {
+        let patch = "*** Begin Patch\n*** Add File: empty.txt\n*** End Patch";
+        let result = parse_patch(patch);
+        assert!(matches!(result, Err(ParseError::InvalidHunkError { .. })));
     }
 
     #[test]

@@ -7,10 +7,16 @@
 //! - aipatch_version
 //! - aipatch_abi_version
 
+use std::collections::HashSet;
 use std::ffi::{c_char, c_int, CString};
+#[cfg(test)]
+use std::ffi::CStr;
 use std::path::Path;
+use std::sync::{Mutex, OnceLock};
 
 use crate::errors::{AIPATCH_INVALID_ARGUMENT, AIPATCH_OK};
+#[cfg(test)]
+use crate::errors::AIPATCH_PATH_VIOLATION;
 
 pub const ABI_VERSION: c_int = 1;
 pub const LIB_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
@@ -42,9 +48,11 @@ impl AipatchResult {
                 let message = sanitize_message(message);
                 let message_len = message.len();
                 let cstring = CString::new(message).expect("sanitized message must not contain NUL");
+                let ptr = cstring.into_raw();
+                register_owned_message(ptr);
                 Self {
                     code,
-                    message: cstring.into_raw(),
+                    message: ptr,
                     message_len,
                 }
             }
@@ -52,9 +60,41 @@ impl AipatchResult {
     }
 
     unsafe fn write_to(self, out: *mut AipatchResult) {
+        free_owned_message_if_tracked((*out).message);
         (*out).code = self.code;
         (*out).message = self.message;
         (*out).message_len = self.message_len;
+    }
+}
+
+fn owned_messages() -> &'static Mutex<HashSet<usize>> {
+    static OWNED_MESSAGES: OnceLock<Mutex<HashSet<usize>>> = OnceLock::new();
+    OWNED_MESSAGES.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn register_owned_message(ptr: *mut c_char) {
+    if ptr.is_null() {
+        return;
+    }
+    owned_messages()
+        .lock()
+        .expect("owned message registry poisoned")
+        .insert(ptr as usize);
+}
+
+fn take_owned_message(ptr: *mut c_char) -> bool {
+    if ptr.is_null() {
+        return false;
+    }
+    owned_messages()
+        .lock()
+        .expect("owned message registry poisoned")
+        .remove(&(ptr as usize))
+}
+
+unsafe fn free_owned_message_if_tracked(ptr: *mut c_char) {
+    if take_owned_message(ptr) {
+        drop(CString::from_raw(ptr));
     }
 }
 
@@ -170,11 +210,9 @@ pub unsafe extern "C" fn aipatch_result_free(result: *mut AipatchResult) {
     }
 
     let result = &mut *result;
-    if !result.message.is_null() {
-        drop(CString::from_raw(result.message));
-        result.message = std::ptr::null_mut();
-        result.message_len = 0;
-    }
+    free_owned_message_if_tracked(result.message);
+    result.message = std::ptr::null_mut();
+    result.message_len = 0;
 }
 
 #[no_mangle]
@@ -190,9 +228,7 @@ pub extern "C" fn aipatch_abi_version() -> c_int {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::errors::{AIPATCH_OK, AIPATCH_PATH_VIOLATION};
     use crate::test_support::TempDir;
-    use std::ffi::{CStr, CString};
 
     fn call_check(patch: &[u8], root: &[u8]) -> (c_int, AipatchResult) {
         let mut out = AipatchResult {
@@ -317,6 +353,75 @@ mod tests {
         assert_eq!(out.code, AIPATCH_INVALID_ARGUMENT);
         let message = unsafe { CStr::from_ptr(out.message) }.to_str().unwrap().to_owned();
         assert!(message.contains("patch is not valid UTF-8"));
+        unsafe { aipatch_result_free(&mut out) };
+    }
+
+    #[test]
+    fn test_reusing_out_replaces_previous_owned_message() {
+        let dir = TempDir::new().unwrap();
+        let root = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let bad_patch = CString::new("bad patch").unwrap();
+        let good_patch = CString::new("*** Begin Patch\n*** Add File: ok.txt\n+hi\n*** End Patch").unwrap();
+        let mut out = AipatchResult {
+            code: -1,
+            message: std::ptr::null_mut(),
+            message_len: 0,
+        };
+
+        let rc1 = unsafe {
+            aipatch_check(
+                bad_patch.as_ptr(),
+                bad_patch.as_bytes().len(),
+                root.as_ptr(),
+                root.as_bytes().len(),
+                &mut out,
+            )
+        };
+        assert_eq!(rc1, 0);
+        assert!(!out.message.is_null());
+        assert!(out.message_len > 0);
+
+        let rc2 = unsafe {
+            aipatch_check(
+                good_patch.as_ptr(),
+                good_patch.as_bytes().len(),
+                root.as_ptr(),
+                root.as_bytes().len(),
+                &mut out,
+            )
+        };
+        assert_eq!(rc2, 0);
+        assert_eq!(out.code, AIPATCH_OK);
+        assert!(out.message.is_null());
+        assert_eq!(out.message_len, 0);
+        unsafe { aipatch_result_free(&mut out) };
+    }
+
+    #[test]
+    fn test_reusing_out_with_foreign_message_is_safe() {
+        let dir = TempDir::new().unwrap();
+        let patch = b"*** Begin Patch\n*** Add File: new.txt\n+hi\n*** End Patch";
+        let root = dir.path().to_str().unwrap().as_bytes();
+        static FOREIGN_MESSAGE: &[u8] = b"foreign\0";
+        let mut out = AipatchResult {
+            code: 123,
+            message: FOREIGN_MESSAGE.as_ptr().cast::<c_char>() as *mut c_char,
+            message_len: 7,
+        };
+
+        let rc = unsafe {
+            aipatch_check(
+                patch.as_ptr().cast::<c_char>(),
+                patch.len(),
+                root.as_ptr().cast::<c_char>(),
+                root.len(),
+                &mut out,
+            )
+        };
+        assert_eq!(rc, 0);
+        assert_eq!(out.code, AIPATCH_OK);
+        assert!(out.message.is_null());
+        assert_eq!(out.message_len, 0);
         unsafe { aipatch_result_free(&mut out) };
     }
 }
