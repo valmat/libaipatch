@@ -90,7 +90,7 @@ Additional bindings live under `bindings/`:
 
 - `bindings/cpp/` — header-only C++ wrapper, example, and smoke-test;
 - `bindings/D/` — D module, example, and smoke-test;
-- `bindings/Makefile` — convenience targets for building and running binding checks.
+- `bindings/Makefile` — convenience targets for building and running binding checks; binaries are written to `bindings/build/`.
 
 Useful commands:
 

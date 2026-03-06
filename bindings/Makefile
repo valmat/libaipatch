@@ -1,7 +1,7 @@
 ROOT := $(abspath ..)
 RUST_DIR := $(ROOT)/rust
 INCLUDE_DIR := $(ROOT)/include
-BUILD_DIR := $(ROOT)/build/bindings
+BUILD_DIR := $(ROOT)/bindings/build
 LIBAIPATCH := $(RUST_DIR)/target/release/libaipatch.a
 NATIVE_LIBS := -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc
 
