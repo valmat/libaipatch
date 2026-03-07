@@ -384,7 +384,37 @@ mod tests {
         assert_eq!(rc, 0);
         assert_eq!(out.code, AIPATCH_UNSUPPORTED);
         let message = unsafe { CStr::from_ptr(out.message) }.to_str().unwrap().to_owned();
+        assert!(message.contains("tag: unsupported.file.non_utf8"));
         assert!(message.contains("non-UTF-8"));
+        unsafe { aipatch_result_free(&mut out) };
+    }
+
+    #[test]
+    fn test_path_violation_message_is_agent_friendly() {
+        let dir = TempDir::new().unwrap();
+        let patch = CString::new("*** Begin Patch\n*** Add File: ../../evil\n+x\n*** End Patch").unwrap();
+        let root = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let mut out = AipatchResult {
+            code: -1,
+            message: std::ptr::null_mut(),
+            message_len: 999,
+        };
+
+        let rc = unsafe {
+            aipatch_check(
+                patch.as_ptr(),
+                patch.as_bytes().len(),
+                root.as_ptr(),
+                root.as_bytes().len(),
+                &mut out,
+            )
+        };
+
+        assert_eq!(rc, 0);
+        assert_eq!(out.code, AIPATCH_PATH_VIOLATION);
+        let message = unsafe { CStr::from_ptr(out.message) }.to_str().unwrap().to_owned();
+        assert!(message.contains("tag: path.traversal_detected"));
+        assert!(message.contains("root_dir:"));
         unsafe { aipatch_result_free(&mut out) };
     }
 

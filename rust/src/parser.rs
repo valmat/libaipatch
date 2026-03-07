@@ -54,6 +54,10 @@ fn format_agent_error(tag: &str, hint: &str, detail: impl Into<String>) -> Strin
     format!("tag: {tag}\nhint: {hint}\ndetail: {}", detail.into())
 }
 
+fn invalid_patch_message(tag: &str, hint: &str, detail: impl Into<String>) -> ParseError {
+    InvalidPatchError(format_agent_error(tag, hint, detail))
+}
+
 #[derive(Debug, PartialEq, Clone)]
 #[allow(clippy::enum_variant_names)]
 pub enum Hunk {
@@ -193,12 +197,16 @@ fn check_start_and_end_lines_strict(
         (Some(first), Some(last)) if first == BEGIN_PATCH_MARKER && last == END_PATCH_MARKER => {
             Ok(())
         }
-        (Some(first), _) if first != BEGIN_PATCH_MARKER => Err(InvalidPatchError(String::from(
+        (Some(first), _) if first != BEGIN_PATCH_MARKER => Err(invalid_patch_message(
+            "parse.patch.missing_begin",
+            "start the patch with the exact line '*** Begin Patch'",
             "The first line of the patch must be '*** Begin Patch'",
-        ))),
-        _ => Err(InvalidPatchError(String::from(
+        )),
+        _ => Err(invalid_patch_message(
+            "parse.patch.missing_end",
+            "end the patch with the exact line '*** End Patch'",
             "The last line of the patch must be '*** End Patch'",
-        ))),
+        )),
     }
 }
 
@@ -478,8 +486,14 @@ mod tests {
 
     #[test]
     fn test_parse_invalid_missing_begin() {
-        let result = parse_patch("bad patch");
-        assert!(result.is_err());
+        let err = parse_patch("bad patch").unwrap_err();
+        match err {
+            ParseError::InvalidPatchError(message) => {
+                assert!(message.contains("tag: parse.patch.missing_begin"));
+                assert!(message.contains("*** Begin Patch"));
+            }
+            _ => panic!("expected InvalidPatchError"),
+        }
     }
 
     #[test]

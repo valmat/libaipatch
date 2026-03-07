@@ -11,6 +11,20 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::errors::AiPatchError;
 
+fn format_path_violation(
+    tag: &str,
+    hint: &str,
+    raw: &Path,
+    root_dir: &Path,
+    detail: String,
+) -> AiPatchError {
+    AiPatchError::PathViolation(format!(
+        "tag: {tag}\nhint: {hint}\npath: {}\nroot_dir: {}\ndetail: {detail}",
+        raw.display(),
+        root_dir.display()
+    ))
+}
+
 /// Validate and resolve a raw path from the patch against root_dir.
 ///
 /// Returns the absolute resolved path if valid, or an error if the path
@@ -18,10 +32,13 @@ use crate::errors::AiPatchError;
 pub fn validate_path(raw: &Path, root_dir: &Path) -> Result<PathBuf, AiPatchError> {
     // Reject absolute paths in the patch.
     if raw.is_absolute() {
-        return Err(AiPatchError::PathViolation(format!(
-            "absolute paths are not allowed in patches: {}",
-            raw.display()
-        )));
+        return Err(format_path_violation(
+            "path.absolute_not_allowed",
+            "use a relative path inside root_dir",
+            raw,
+            root_dir,
+            format!("absolute paths are not allowed in patches: {}", raw.display()),
+        ));
     }
 
     // Normalize the path by resolving '..' and '.' components without
@@ -37,17 +54,23 @@ pub fn validate_path(raw: &Path, root_dir: &Path) -> Result<PathBuf, AiPatchErro
                 // '..' — try to pop, but if we can't go further back than
                 // root_dir, reject as a traversal attempt.
                 if !normalized.pop() || normalized.as_os_str().is_empty() {
-                    return Err(AiPatchError::PathViolation(format!(
-                        "path traversal detected: {} escapes root_dir",
-                        raw.display()
-                    )));
+                    return Err(format_path_violation(
+                        "path.traversal_detected",
+                        "remove '..' segments that escape root_dir and keep the patch path relative",
+                        raw,
+                        root_dir,
+                        format!("path traversal detected: {} escapes root_dir", raw.display()),
+                    ));
                 }
                 // Check that we haven't gone above root_dir.
                 if !normalized.starts_with(root_dir) {
-                    return Err(AiPatchError::PathViolation(format!(
-                        "path traversal detected: {} escapes root_dir",
-                        raw.display()
-                    )));
+                    return Err(format_path_violation(
+                        "path.traversal_detected",
+                        "remove '..' segments that escape root_dir and keep the patch path relative",
+                        raw,
+                        root_dir,
+                        format!("path traversal detected: {} escapes root_dir", raw.display()),
+                    ));
                 }
             }
             Component::Normal(part) => {
@@ -55,21 +78,26 @@ pub fn validate_path(raw: &Path, root_dir: &Path) -> Result<PathBuf, AiPatchErro
             }
             Component::RootDir | Component::Prefix(_) => {
                 // These should not appear in a relative path, but guard anyway.
-                return Err(AiPatchError::PathViolation(format!(
-                    "invalid path component in patch path: {}",
-                    raw.display()
-                )));
+                return Err(format_path_violation(
+                    "path.invalid_component",
+                    "use a normal relative filesystem path without drive prefixes or root markers",
+                    raw,
+                    root_dir,
+                    format!("invalid path component in patch path: {}", raw.display()),
+                ));
             }
         }
     }
 
     // Final check: the normalized path must start with root_dir.
     if !normalized.starts_with(root_dir) {
-        return Err(AiPatchError::PathViolation(format!(
-            "path {} escapes root_dir {}",
-            raw.display(),
-            root_dir.display()
-        )));
+        return Err(format_path_violation(
+            "path.outside_root",
+            "keep the resolved patch path inside root_dir",
+            raw,
+            root_dir,
+            format!("path {} escapes root_dir {}", raw.display(), root_dir.display()),
+        ));
     }
 
     Ok(normalized)
@@ -93,7 +121,13 @@ mod tests {
     #[test]
     fn test_reject_absolute_path() {
         let result = validate_path(Path::new("/etc/passwd"), &root());
-        assert!(matches!(result, Err(AiPatchError::PathViolation(_))));
+        match result.unwrap_err() {
+            AiPatchError::PathViolation(message) => {
+                assert!(message.contains("tag: path.absolute_not_allowed"));
+                assert!(message.contains("root_dir: /sandbox"));
+            }
+            _ => panic!("expected PathViolation"),
+        }
     }
 
     #[test]

@@ -20,6 +20,32 @@ use crate::paths::validate_path;
 use crate::seek_sequence::seek_sequence;
 use crate::write_ops::{commit_add, commit_delete, commit_update};
 
+fn format_agent_message(
+    tag: &str,
+    hint: &str,
+    detail: impl Into<String>,
+    extras: &[(&str, String)],
+) -> String {
+    let mut message = format!("tag: {tag}\nhint: {hint}");
+    for (key, value) in extras {
+        message.push_str(&format!("\n{key}: {value}"));
+    }
+    message.push_str(&format!("\ndetail: {}", detail.into()));
+    message
+}
+
+fn invalid_argument_message(tag: &str, hint: &str, detail: impl Into<String>, extras: &[(&str, String)]) -> AiPatchError {
+    AiPatchError::InvalidArgument(format_agent_message(tag, hint, detail, extras))
+}
+
+fn unsupported_message(tag: &str, hint: &str, detail: impl Into<String>, extras: &[(&str, String)]) -> AiPatchError {
+    AiPatchError::Unsupported(format_agent_message(tag, hint, detail, extras))
+}
+
+fn patch_conflict_message(tag: &str, hint: &str, detail: impl Into<String>, extras: &[(&str, String)]) -> AiPatchError {
+    AiPatchError::PatchConflict(format_agent_message(tag, hint, detail, extras))
+}
+
 /// The result of applying a patch: list of human-readable change summaries.
 pub struct ApplyResult {
     pub summary: String,
@@ -93,7 +119,12 @@ fn build_plan(parsed: &ParsedPatch, root_dir: &Path) -> Result<Vec<Operation>, A
 
     if parsed.hunks.is_empty() {
         return Err(AiPatchError::ParseError(
-            crate::parser::ParseError::InvalidPatchError("patch does not contain any hunks".into()),
+            crate::parser::ParseError::InvalidPatchError(format_agent_message(
+                "parse.patch.no_hunks",
+                "include at least one Add File, Delete File, or Update File section between the patch markers",
+                "patch does not contain any hunks",
+                &[],
+            )),
         ));
     }
 
@@ -115,16 +146,20 @@ fn build_plan(parsed: &ParsedPatch, root_dir: &Path) -> Result<Vec<Operation>, A
                 let full_path = validate_path(path, root_dir)?;
                 match get_entry_state(&full_path, &mut state)? {
                     PlannedEntry::Missing => {
-                        return Err(AiPatchError::PatchConflict(format!(
-                            "file to delete not found: {}",
-                            full_path.display()
-                        )));
+                        return Err(patch_conflict_message(
+                            "conflict.delete.missing_file",
+                            "use Delete File only for files that currently exist under root_dir",
+                            format!("file to delete not found: {}", full_path.display()),
+                            &[("file", full_path.display().to_string())],
+                        ));
                     }
                     PlannedEntry::Directory => {
-                        return Err(AiPatchError::Unsupported(format!(
-                            "{} is a directory, not a file",
-                            full_path.display()
-                        )));
+                        return Err(unsupported_message(
+                            "unsupported.delete.directory",
+                            "Delete File operates on regular files only",
+                            format!("{} is a directory, not a file", full_path.display()),
+                            &[("file", full_path.display().to_string())],
+                        ));
                     }
                     PlannedEntry::File(_) => {
                         state.insert(full_path.clone(), PlannedEntry::Missing);
@@ -145,16 +180,20 @@ fn build_plan(parsed: &ParsedPatch, root_dir: &Path) -> Result<Vec<Operation>, A
 
                 let source_contents = match get_entry_state(&src, &mut state)? {
                     PlannedEntry::Missing => {
-                        return Err(AiPatchError::PatchConflict(format!(
-                            "file to update not found: {}",
-                            src.display()
-                        )));
+                        return Err(patch_conflict_message(
+                            "conflict.update.missing_file",
+                            "use Update File only for files that already exist under root_dir",
+                            format!("file to update not found: {}", src.display()),
+                            &[("file", src.display().to_string())],
+                        ));
                     }
                     PlannedEntry::Directory => {
-                        return Err(AiPatchError::Unsupported(format!(
-                            "{} is a directory, not a file",
-                            src.display()
-                        )));
+                        return Err(unsupported_message(
+                            "unsupported.update.directory",
+                            "Update File operates on regular files only",
+                            format!("{} is a directory, not a file", src.display()),
+                            &[("file", src.display().to_string())],
+                        ));
                     }
                     PlannedEntry::File(contents) => contents,
                 };
@@ -180,27 +219,34 @@ fn build_plan(parsed: &ParsedPatch, root_dir: &Path) -> Result<Vec<Operation>, A
 
 fn validate_root_dir(root_dir: &Path) -> Result<(), AiPatchError> {
     if root_dir.as_os_str().is_empty() {
-        return Err(AiPatchError::InvalidArgument(
-            "root_dir must not be empty".into(),
+        return Err(invalid_argument_message(
+            "invalid_argument.root_dir.empty",
+            "pass a non-empty existing directory path as root_dir",
+            "root_dir must not be empty",
+            &[],
         ));
     }
 
     let metadata = std::fs::metadata(root_dir).map_err(|err| {
         if err.kind() == std::io::ErrorKind::NotFound {
-            AiPatchError::InvalidArgument(format!(
-                "root_dir does not exist: {}",
-                root_dir.display()
-            ))
+            invalid_argument_message(
+                "invalid_argument.root_dir.not_found",
+                "create the directory first or pass an existing work tree as root_dir",
+                format!("root_dir does not exist: {}", root_dir.display()),
+                &[("root_dir", root_dir.display().to_string())],
+            )
         } else {
             io_error(format!("stat root_dir {}", root_dir.display()), err)
         }
     })?;
 
     if !metadata.is_dir() {
-        return Err(AiPatchError::InvalidArgument(format!(
-            "root_dir is not a directory: {}",
-            root_dir.display()
-        )));
+        return Err(invalid_argument_message(
+            "invalid_argument.root_dir.not_directory",
+            "pass a directory path, not a file path, as root_dir",
+            format!("root_dir is not a directory: {}", root_dir.display()),
+            &[("root_dir", root_dir.display().to_string())],
+        ));
     }
 
     Ok(())
@@ -216,16 +262,20 @@ fn validate_add_destination(
     match get_entry_state(dest, state)? {
         PlannedEntry::Missing => {}
         PlannedEntry::Directory => {
-            return Err(AiPatchError::Unsupported(format!(
-                "{} is a directory, not a file",
-                dest.display()
-            )));
+            return Err(unsupported_message(
+                "unsupported.add.directory_destination",
+                "Add File needs a file path destination, not an existing directory",
+                format!("{} is a directory, not a file", dest.display()),
+                &[("file", dest.display().to_string())],
+            ));
         }
         PlannedEntry::File(_) => {
-            return Err(AiPatchError::PatchConflict(format!(
-                "cannot add file because it already exists: {}",
-                dest.display()
-            )));
+            return Err(patch_conflict_message(
+                "conflict.add.destination_exists",
+                "use Update File to change an existing file, or choose a new path for Add File",
+                format!("cannot add file because it already exists: {}", dest.display()),
+                &[("file", dest.display().to_string())],
+            ));
         }
     }
 
@@ -245,10 +295,12 @@ fn validate_update_destination(
     }
 
     if matches!(get_entry_state(dest, state)?, PlannedEntry::Directory) {
-        return Err(AiPatchError::Unsupported(format!(
-            "{} is a directory, not a file",
-            dest.display()
-        )));
+        return Err(unsupported_message(
+            "unsupported.update.directory_destination",
+            "Move to / Update File needs a file path destination, not an existing directory",
+            format!("{} is a directory, not a file", dest.display()),
+            &[("file", dest.display().to_string())],
+        ));
     }
 
     Ok(())
@@ -266,11 +318,19 @@ fn ensure_parent_chain_is_directory(
         }
         match get_entry_state(parent, state)? {
             PlannedEntry::File(_) => {
-                return Err(AiPatchError::Unsupported(format!(
-                    "{} is a file, so {} cannot be created inside it",
-                    parent.display(),
-                    path.display()
-                )));
+                return Err(unsupported_message(
+                    "unsupported.parent_is_file",
+                    "choose a destination whose parent path is a directory, not an existing file",
+                    format!(
+                        "{} is a file, so {} cannot be created inside it",
+                        parent.display(),
+                        path.display()
+                    ),
+                    &[
+                        ("parent", parent.display().to_string()),
+                        ("path", path.display().to_string()),
+                    ],
+                ));
             }
             PlannedEntry::Missing | PlannedEntry::Directory => {}
         }
@@ -306,17 +366,21 @@ fn load_entry_state(path: &Path) -> Result<PlannedEntry, AiPatchError> {
     let bytes = std::fs::read(path).map_err(|err| io_error(format!("read file {}", path.display()), err))?;
 
     if bytes.contains(&0) {
-        return Err(AiPatchError::Unsupported(format!(
-            "binary file is not supported: {}",
-            path.display()
-        )));
+        return Err(unsupported_message(
+            "unsupported.file.binary",
+            "libaipatch v1 supports UTF-8 text files only",
+            format!("binary file is not supported: {}", path.display()),
+            &[("file", path.display().to_string())],
+        ));
     }
 
     let contents = String::from_utf8(bytes).map_err(|_| {
-        AiPatchError::Unsupported(format!(
-            "non-UTF-8 text file is not supported: {}",
-            path.display()
-        ))
+        unsupported_message(
+            "unsupported.file.non_utf8",
+            "libaipatch v1 supports UTF-8 text files only",
+            format!("non-UTF-8 text file is not supported: {}", path.display()),
+            &[("file", path.display().to_string())],
+        )
     })?;
 
     Ok(PlannedEntry::File(contents))
@@ -625,6 +689,19 @@ mod tests {
     }
 
     #[test]
+    fn test_empty_root_dir_has_agent_friendly_message() {
+        let patch = wrap_patch("*** Add File: new.txt\n+hello");
+        let err = check(&patch, Path::new("")).unwrap_err();
+        match err {
+            AiPatchError::InvalidArgument(message) => {
+                assert!(message.contains("tag: invalid_argument.root_dir.empty"));
+                assert!(message.contains("hint: pass a non-empty existing directory path as root_dir"));
+            }
+            _ => panic!("expected InvalidArgument"),
+        }
+    }
+
+    #[test]
     fn test_apply_add_file() {
         let dir = TempDir::new().unwrap();
         let patch = wrap_patch("*** Add File: hello.txt\n+line1\n+line2");
@@ -772,7 +849,37 @@ mod tests {
         let err = check(&patch, dir.path()).unwrap_err();
         match err {
             AiPatchError::PatchConflict(message) => {
+                assert!(message.contains("tag: conflict.add.destination_exists"));
                 assert!(message.contains("already exists"));
+            }
+            _ => panic!("expected PatchConflict"),
+        }
+    }
+
+    #[test]
+    fn test_update_missing_file_has_agent_friendly_message() {
+        let dir = TempDir::new().unwrap();
+        let patch = wrap_patch("*** Update File: missing.txt\n@@\n-old\n+new");
+        let err = check(&patch, dir.path()).unwrap_err();
+        match err {
+            AiPatchError::PatchConflict(message) => {
+                assert!(message.contains("tag: conflict.update.missing_file"));
+                assert!(message.contains("file: "));
+                assert!(message.contains("missing.txt"));
+            }
+            _ => panic!("expected PatchConflict"),
+        }
+    }
+
+    #[test]
+    fn test_delete_missing_file_has_agent_friendly_message() {
+        let dir = TempDir::new().unwrap();
+        let patch = wrap_patch("*** Delete File: missing.txt");
+        let err = check(&patch, dir.path()).unwrap_err();
+        match err {
+            AiPatchError::PatchConflict(message) => {
+                assert!(message.contains("tag: conflict.delete.missing_file"));
+                assert!(message.contains("missing.txt"));
             }
             _ => panic!("expected PatchConflict"),
         }

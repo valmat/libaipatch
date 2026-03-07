@@ -124,6 +124,16 @@ The C ABI exposes stable high-level error categories through
 Callers should always check the C function return value first and then inspect
 `aipatch_result.code`.
 
+For machine-assisted recovery, many v1 diagnostics in `aipatch_result.message`
+now follow a stable text shape with fields such as:
+
+- `tag: ...`
+- `hint: ...`
+- `detail: ...`
+
+Some errors also include additional fields like `file:`, `path:`, `root_dir:`,
+`hunk:`, `expected_context:`, `expected_lines:`, or `nearest_actual:`.
+
 ## Patch authoring guidance for agents
 
 When generating patches for this library:
