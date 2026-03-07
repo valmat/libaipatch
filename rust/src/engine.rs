@@ -649,7 +649,7 @@ fn apply_replacements(
 }
 
 fn build_summary(added: &[String], modified: &[String], deleted: &[String]) -> String {
-    let mut summary = String::from("Success. Updated the following files:\n");
+    let mut summary = String::from("status: ok\noperations:\n");
     for path in added {
         summary.push_str(&format!("A {path}\n"));
     }
@@ -705,7 +705,10 @@ mod tests {
     fn test_apply_add_file() {
         let dir = TempDir::new().unwrap();
         let patch = wrap_patch("*** Add File: hello.txt\n+line1\n+line2");
-        apply(&patch, dir.path()).unwrap();
+        let result = apply(&patch, dir.path()).unwrap();
+        assert!(result.summary.contains("status: ok"));
+        assert!(result.summary.contains("operations:"));
+        assert!(result.summary.contains("A "));
         let contents = fs::read_to_string(dir.path().join("hello.txt")).unwrap();
         assert_eq!(contents, "line1\nline2\n");
     }

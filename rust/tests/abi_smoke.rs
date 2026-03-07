@@ -42,6 +42,10 @@ fn abi_check_and_apply_smoke() {
     assert_eq!(apply_rc, 0);
     assert_eq!(apply_out.code, AIPATCH_OK);
     assert!(!apply_out.message.is_null());
+    let summary = unsafe { CStr::from_ptr(apply_out.message) }.to_str().unwrap();
+    assert!(summary.contains("status: ok"));
+    assert!(summary.contains("operations:"));
+    assert!(summary.contains("A "));
     unsafe { aipatch_result_free(&mut apply_out) };
 
     assert_eq!(std::fs::read_to_string(dir.path().join("smoke.txt")).unwrap(), "ok\n");

@@ -135,6 +135,47 @@ Some errors also include additional fields like `file:`, `path:`, `root_dir:`,
 `hunk:`, `expected_context:`, `expected_lines:`, `nearest_actual:`, `context:`,
 or `kind:`.
 
+On success, `aipatch_apply` returns a compact text summary shaped like:
+
+- `status: ok`
+- `operations:`
+- `A <path>` / `M <path>` / `D <path>`
+
+## Diagnostic tag families
+
+For integration code, treat `aipatch_result.code` as the stable top-level category
+and `tag:` inside `aipatch_result.message` as a stable subcategory for common
+machine-relevant cases.
+
+Current tag families used by the library include:
+
+- `parse.patch.*` — patch envelope or whole-patch structure problems.
+- `parse.add_file.*` — malformed `Add File` hunks.
+- `parse.update_file.*` — malformed `Update File` / `Move to` hunk structure.
+- `parse.update_chunk.*` — malformed lines or missing `@@` sections inside update chunks.
+- `conflict.add.*` — semantic conflicts while adding files.
+- `conflict.delete.*` — semantic conflicts while deleting files.
+- `conflict.update.*` — semantic conflicts while updating files, including missing context or unmatched expected lines.
+- `path.*` — rejected paths, traversal attempts, or invalid path components.
+- `invalid_argument.*` — bad top-level inputs such as invalid `root_dir`.
+- `unsupported.*` — inputs or filesystem states outside the v1 text-file model.
+- `io.*` — runtime filesystem errors during stat/read/write/create/remove/rename operations.
+
+Important integration guidance:
+
+- match `aipatch_result.code` first, then inspect `tag:` for finer recovery logic;
+- do not depend on exact prose inside `hint:` or `detail:`;
+- expect new tags to appear over time inside an existing family without an ABI change;
+- treat unknown tags within a known `code` as recoverable unknown subtypes, not as protocol breakage.
+
+Practical examples:
+
+- `AIPATCH_PARSE_ERROR` + `tag: parse.update_chunk.invalid_line`
+- `AIPATCH_PATCH_CONFLICT` + `tag: conflict.update.context_not_found`
+- `AIPATCH_PATH_VIOLATION` + `tag: path.traversal_detected`
+- `AIPATCH_UNSUPPORTED` + `tag: unsupported.file.non_utf8`
+- `AIPATCH_IO_ERROR` + `tag: io.error`
+
 ## Patch authoring guidance for agents
 
 When generating patches for this library:

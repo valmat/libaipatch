@@ -269,6 +269,7 @@ Note: the idea to remove `code` from `aipatch_result` and use only the return va
 ### 9.2 Minimal meaning of `message`
 
 - on error, `message` contains human-readable diagnostics;
+- on many common errors, `message` may also include stable machine-oriented fields such as `tag:`, `hint:`, and `detail:`;
 - on success, `message` may be empty or contain a short summary;
 - a detailed preview in `message` is not required;
 - the caller may use either `message_len` or null-termination, but the canonical length source is `message_len`.

@@ -299,6 +299,10 @@ mod tests {
         let (rc, mut out) = call_apply(patch, root);
         assert_eq!(rc, 0);
         assert_eq!(out.code, AIPATCH_OK);
+        let message = unsafe { CStr::from_ptr(out.message) }.to_str().unwrap().to_owned();
+        assert!(message.contains("status: ok"));
+        assert!(message.contains("operations:"));
+        assert!(message.contains("A "));
         unsafe { aipatch_result_free(&mut out) };
         assert!(dir.path().join("hello.txt").exists());
     }
