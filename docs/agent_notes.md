@@ -168,6 +168,14 @@ Important integration guidance:
 - expect new tags to appear over time inside an existing family without an ABI change;
 - treat unknown tags within a known `code` as recoverable unknown subtypes, not as protocol breakage.
 
+Field conventions used by the current implementation:
+
+- `path:` — the path value as it appeared in patch input or path validation.
+- `file:` — a resolved filesystem target file or destination inside `root_dir`.
+- `root_dir:` — the root directory argument.
+- `parent:` — a parent filesystem entry involved in a parent-chain conflict.
+- `context:` — the filesystem operation being attempted for an `io.*` failure.
+
 Practical examples:
 
 - `AIPATCH_PARSE_ERROR` + `tag: parse.update_chunk.invalid_line`

@@ -328,7 +328,7 @@ fn ensure_parent_chain_is_directory(
                     ),
                     &[
                         ("parent", parent.display().to_string()),
-                        ("path", path.display().to_string()),
+                        ("file", path.display().to_string()),
                     ],
                 ));
             }
@@ -913,6 +913,23 @@ mod tests {
             AiPatchError::Unsupported(message) => {
                 assert!(message.contains("binary file"));
                 assert!(message.contains("f.bin"));
+            }
+            _ => panic!("expected Unsupported"),
+        }
+    }
+
+    #[test]
+    fn test_parent_is_file_message_uses_parent_and_file_fields() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("outer"), "not a dir\n").unwrap();
+        let patch = wrap_patch("*** Add File: outer/inner.txt\n+hello");
+        let err = check(&patch, dir.path()).unwrap_err();
+        match err {
+            AiPatchError::Unsupported(message) => {
+                assert!(message.contains("tag: unsupported.parent_is_file"));
+                assert!(message.contains("parent: "));
+                assert!(message.contains("file: "));
+                assert!(!message.contains("\npath: "));
             }
             _ => panic!("expected Unsupported"),
         }
