@@ -23,9 +23,9 @@ pub enum AiPatchError {
     #[error("parse error: {0}")]
     ParseError(#[from] ParseError),
 
-    #[error("I/O error: {context}: {source}")]
+    #[error("{message}")]
     IoError {
-        context: String,
+        message: String,
         #[source]
         source: std::io::Error,
     },
@@ -58,10 +58,56 @@ impl AiPatchError {
     }
 }
 
+fn io_error_hint(kind: std::io::ErrorKind) -> &'static str {
+    match kind {
+        std::io::ErrorKind::NotFound => {
+            "check that the referenced file or directory exists and was not changed concurrently"
+        }
+        std::io::ErrorKind::PermissionDenied => {
+            "check filesystem permissions and whether the destination is writable"
+        }
+        std::io::ErrorKind::AlreadyExists => {
+            "check whether a file or directory already exists at the destination path"
+        }
+        _ => "check filesystem state, permissions, free space, and concurrent modifications",
+    }
+}
+
 /// Convenience constructor for IoError.
 pub(crate) fn io_error(context: impl Into<String>, source: std::io::Error) -> AiPatchError {
+    let context = context.into();
+    let kind = source.kind();
     AiPatchError::IoError {
-        context: context.into(),
+        message: format!(
+            "tag: io.error\nhint: {}\ncontext: {}\nkind: {:?}\ndetail: {}",
+            io_error_hint(kind),
+            context,
+            kind,
+            source
+        ),
         source,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_io_error_is_agent_friendly() {
+        let err = io_error(
+            "write file /tmp/demo.txt",
+            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "permission denied"),
+        );
+
+        match err {
+            AiPatchError::IoError { message, .. } => {
+                assert!(message.contains("tag: io.error"));
+                assert!(message.contains("context: write file /tmp/demo.txt"));
+                assert!(message.contains("kind: PermissionDenied"));
+                assert!(message.contains("permission denied"));
+            }
+            _ => panic!("expected IoError"),
+        }
     }
 }

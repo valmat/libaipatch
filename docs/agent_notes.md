@@ -132,7 +132,8 @@ now follow a stable text shape with fields such as:
 - `detail: ...`
 
 Some errors also include additional fields like `file:`, `path:`, `root_dir:`,
-`hunk:`, `expected_context:`, `expected_lines:`, or `nearest_actual:`.
+`hunk:`, `expected_context:`, `expected_lines:`, `nearest_actual:`, `context:`,
+or `kind:`.
 
 ## Patch authoring guidance for agents
 
