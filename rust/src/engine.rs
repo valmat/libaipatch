@@ -343,6 +343,158 @@ fn compute_new_content(
     Ok(new_lines.join("\n"))
 }
 
+fn format_conflict_message(
+    tag: &str,
+    hint: &str,
+    file: &Path,
+    hunk_index: usize,
+    expected_label: &str,
+    expected_value: &str,
+    nearest_actual: Option<String>,
+    detail: String,
+) -> String {
+    let mut message = format!(
+        "tag: {tag}\nhint: {hint}\nfile: {}\nhunk: {hunk_index}\n{expected_label}: {expected_value}",
+        file.display()
+    );
+
+    if let Some(actual) = nearest_actual {
+        message.push_str(&format!("\nnearest_actual: {actual}"));
+    }
+
+    message.push_str(&format!("\ndetail: {detail}"));
+    message
+}
+
+fn normalise_hint_text(s: &str) -> String {
+    s.trim()
+        .chars()
+        .map(|c| match c {
+            '\u{2010}' | '\u{2011}' | '\u{2012}' | '\u{2013}' | '\u{2014}' | '\u{2015}'
+            | '\u{2212}' => '-',
+            '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}' => '\'',
+            '\u{201C}' | '\u{201D}' | '\u{201E}' | '\u{201F}' => '"',
+            '\u{00A0}' | '\u{2002}' | '\u{2003}' | '\u{2004}' | '\u{2005}' | '\u{2006}'
+            | '\u{2007}' | '\u{2008}' | '\u{2009}' | '\u{200A}' | '\u{202F}' | '\u{205F}'
+            | '\u{3000}' => ' ',
+            other => other,
+        })
+        .collect::<String>()
+}
+
+fn strip_all_whitespace(s: &str) -> String {
+    normalise_hint_text(s)
+        .chars()
+        .filter(|ch| !ch.is_whitespace())
+        .collect()
+}
+
+fn find_similar_line_index(lines: &[String], target: &str, start: usize) -> Option<usize> {
+    let target_normalized = normalise_hint_text(target).to_lowercase();
+    let target_compact = strip_all_whitespace(target).to_lowercase();
+
+    let mut best: Option<(usize, usize)> = None;
+
+    for (idx, line) in lines.iter().enumerate().skip(start) {
+        let line_normalized = normalise_hint_text(line).to_lowercase();
+        let line_compact = strip_all_whitespace(line).to_lowercase();
+
+        let score = if line_normalized == target_normalized {
+            4
+        } else if !target_compact.is_empty() && line_compact == target_compact {
+            3
+        } else if !target_normalized.is_empty()
+            && (line_normalized.contains(&target_normalized)
+                || target_normalized.contains(&line_normalized))
+        {
+            2
+        } else if !target_compact.is_empty()
+            && (line_compact.contains(&target_compact) || target_compact.contains(&line_compact))
+        {
+            1
+        } else {
+            0
+        };
+
+        if score == 0 {
+            continue;
+        }
+
+        match best {
+            Some((best_score, _)) if best_score >= score => {}
+            _ => best = Some((score, idx)),
+        }
+    }
+
+    best.map(|(_, idx)| idx)
+}
+
+fn snippet_from(lines: &[String], start: usize, max_lines: usize) -> String {
+    lines.iter()
+        .skip(start)
+        .take(max_lines)
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join("\\n")
+}
+
+fn detect_probable_causes(lines: &[String], target: &str, start: usize) -> &'static str {
+    if find_similar_line_index(lines, target, start).is_some() {
+        "the file likely changed, the patch needs more context, or whitespace / line-ending differences are significant"
+    } else {
+        "the file likely changed since the patch was generated or the patch targets the wrong location"
+    }
+}
+
+fn build_context_conflict(
+    path: &Path,
+    hunk_index: usize,
+    expected_context: &str,
+    lines: &[String],
+    start: usize,
+) -> AiPatchError {
+    let nearest_actual = find_similar_line_index(lines, expected_context, start)
+        .map(|idx| snippet_from(lines, idx, 3));
+    let hint = detect_probable_causes(lines, expected_context, start);
+    AiPatchError::PatchConflict(format_conflict_message(
+        "conflict.update.context_not_found",
+        hint,
+        path,
+        hunk_index,
+        "expected_context",
+        expected_context,
+        nearest_actual,
+        format!("failed to find context '{expected_context}' in {}", path.display()),
+    ))
+}
+
+fn build_expected_lines_conflict(
+    path: &Path,
+    hunk_index: usize,
+    expected_lines: &[String],
+    lines: &[String],
+    start: usize,
+) -> AiPatchError {
+    let anchor = expected_lines
+        .iter()
+        .find(|line| !line.trim().is_empty())
+        .map(String::as_str)
+        .unwrap_or("");
+    let nearest_actual = find_similar_line_index(lines, anchor, start)
+        .map(|idx| snippet_from(lines, idx, expected_lines.len().max(3)));
+    let hint = detect_probable_causes(lines, anchor, start);
+    AiPatchError::PatchConflict(format_conflict_message(
+        "conflict.update.expected_lines_not_found",
+        hint,
+        path,
+        hunk_index,
+        "expected_lines",
+        &expected_lines.join("\\n"),
+        nearest_actual,
+        format!("failed to find expected lines in {}", path.display()),
+    ))
+}
+
 fn compute_replacements(
     original_lines: &[String],
     path: &Path,
@@ -351,7 +503,8 @@ fn compute_replacements(
     let mut replacements: Vec<(usize, usize, Vec<String>)> = Vec::new();
     let mut line_index: usize = 0;
 
-    for chunk in chunks {
+    for (index, chunk) in chunks.iter().enumerate() {
+        let hunk_index = index + 1;
         if let Some(ctx_line) = &chunk.change_context {
             if let Some(idx) = seek_sequence(
                 original_lines,
@@ -361,11 +514,13 @@ fn compute_replacements(
             ) {
                 line_index = idx + 1;
             } else {
-                return Err(AiPatchError::PatchConflict(format!(
-                    "failed to find context '{}' in {}",
+                return Err(build_context_conflict(
+                    path,
+                    hunk_index,
                     ctx_line,
-                    path.display()
-                )));
+                    original_lines,
+                    line_index,
+                ));
             }
         }
 
@@ -395,11 +550,13 @@ fn compute_replacements(
             replacements.push((start_idx, pattern.len(), new_slice.to_vec()));
             line_index = start_idx + pattern.len();
         } else {
-            return Err(AiPatchError::PatchConflict(format!(
-                "failed to find expected lines in {}:\n{}",
-                path.display(),
-                chunk.old_lines.join("\n"),
-            )));
+            return Err(build_expected_lines_conflict(
+                path,
+                hunk_index,
+                &chunk.old_lines,
+                original_lines,
+                line_index,
+            ));
         }
     }
 
@@ -545,6 +702,41 @@ mod tests {
         assert!(result.is_err());
         let contents = fs::read_to_string(dir.path().join("f.txt")).unwrap();
         assert_eq!(contents, "aaa\n");
+    }
+
+    #[test]
+    fn test_conflict_message_includes_expected_lines_and_hunk() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("f.txt"), "aaa\n").unwrap();
+        let patch = wrap_patch("*** Update File: f.txt\n@@\n-bbb\n+ccc");
+        let err = check(&patch, dir.path()).unwrap_err();
+        match err {
+            AiPatchError::PatchConflict(message) => {
+                assert!(message.contains("tag: conflict.update.expected_lines_not_found"));
+                assert!(message.contains("file: "));
+                assert!(message.contains("hunk: 1"));
+                assert!(message.contains("expected_lines: bbb"));
+                assert!(message.contains("detail: failed to find expected lines in"));
+            }
+            _ => panic!("expected PatchConflict"),
+        }
+    }
+
+    #[test]
+    fn test_conflict_message_includes_nearest_actual_for_context() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("f.txt"), "fn main ()\nbody\n").unwrap();
+        let patch = wrap_patch("*** Update File: f.txt\n@@ fn main()\n-body\n+body2");
+        let err = check(&patch, dir.path()).unwrap_err();
+        match err {
+            AiPatchError::PatchConflict(message) => {
+                assert!(message.contains("tag: conflict.update.context_not_found"));
+                assert!(message.contains("expected_context: fn main()"));
+                assert!(message.contains("nearest_actual: fn main ()"));
+                assert!(message.contains("whitespace"));
+            }
+            _ => panic!("expected PatchConflict"),
+        }
     }
 
     #[test]

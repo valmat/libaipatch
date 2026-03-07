@@ -57,4 +57,5 @@ docs.json
 *.temp
 /tmp-*/
 *.txt
+*.bak
 
