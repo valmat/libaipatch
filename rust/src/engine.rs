@@ -213,11 +213,20 @@ fn validate_add_destination(
 ) -> Result<(), AiPatchError> {
     ensure_parent_chain_is_directory(dest, root_dir, state)?;
 
-    if matches!(get_entry_state(dest, state)?, PlannedEntry::Directory) {
-        return Err(AiPatchError::Unsupported(format!(
-            "{} is a directory, not a file",
-            dest.display()
-        )));
+    match get_entry_state(dest, state)? {
+        PlannedEntry::Missing => {}
+        PlannedEntry::Directory => {
+            return Err(AiPatchError::Unsupported(format!(
+                "{} is a directory, not a file",
+                dest.display()
+            )));
+        }
+        PlannedEntry::File(_) => {
+            return Err(AiPatchError::PatchConflict(format!(
+                "cannot add file because it already exists: {}",
+                dest.display()
+            )));
+        }
     }
 
     Ok(())
@@ -294,8 +303,22 @@ fn load_entry_state(path: &Path) -> Result<PlannedEntry, AiPatchError> {
         return Ok(PlannedEntry::Directory);
     }
 
-    let contents = std::fs::read_to_string(path)
-        .map_err(|err| io_error(format!("read file {}", path.display()), err))?;
+    let bytes = std::fs::read(path).map_err(|err| io_error(format!("read file {}", path.display()), err))?;
+
+    if bytes.contains(&0) {
+        return Err(AiPatchError::Unsupported(format!(
+            "binary file is not supported: {}",
+            path.display()
+        )));
+    }
+
+    let contents = String::from_utf8(bytes).map_err(|_| {
+        AiPatchError::Unsupported(format!(
+            "non-UTF-8 text file is not supported: {}",
+            path.display()
+        ))
+    })?;
+
     Ok(PlannedEntry::File(contents))
 }
 
@@ -547,5 +570,49 @@ mod tests {
         let patch = wrap_patch("*** Add File: dup\n+hello");
         let err = check(&patch, dir.path()).unwrap_err();
         assert!(matches!(err, AiPatchError::Unsupported(_)));
+    }
+
+    #[test]
+    fn test_add_rejects_existing_file_destination() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("dup"), "hello\n").unwrap();
+        let patch = wrap_patch("*** Add File: dup\n+updated");
+        let err = check(&patch, dir.path()).unwrap_err();
+        match err {
+            AiPatchError::PatchConflict(message) => {
+                assert!(message.contains("already exists"));
+            }
+            _ => panic!("expected PatchConflict"),
+        }
+    }
+
+    #[test]
+    fn test_update_rejects_non_utf8_file_as_unsupported() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("f.txt"), [0xff, 0xfe, 0xfd]).unwrap();
+        let patch = wrap_patch("*** Update File: f.txt\n@@\n-old\n+new");
+        let err = check(&patch, dir.path()).unwrap_err();
+        match err {
+            AiPatchError::Unsupported(message) => {
+                assert!(message.contains("non-UTF-8"));
+                assert!(message.contains("f.txt"));
+            }
+            _ => panic!("expected Unsupported"),
+        }
+    }
+
+    #[test]
+    fn test_update_rejects_binary_file_as_unsupported() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("f.bin"), b"a\0b\n").unwrap();
+        let patch = wrap_patch("*** Update File: f.bin\n@@\n-a\n+b");
+        let err = check(&patch, dir.path()).unwrap_err();
+        match err {
+            AiPatchError::Unsupported(message) => {
+                assert!(message.contains("binary file"));
+                assert!(message.contains("f.bin"));
+            }
+            _ => panic!("expected Unsupported"),
+        }
     }
 }

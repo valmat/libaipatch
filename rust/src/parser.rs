@@ -50,6 +50,10 @@ pub enum ParseError {
 }
 use ParseError::*;
 
+fn format_agent_error(tag: &str, hint: &str, detail: impl Into<String>) -> String {
+    format!("tag: {tag}\nhint: {hint}\ndetail: {}", detail.into())
+}
+
 #[derive(Debug, PartialEq, Clone)]
 #[allow(clippy::enum_variant_names)]
 pub enum Hunk {
@@ -216,7 +220,11 @@ fn parse_one_hunk(lines: &[&str], line_number: usize) -> Result<(Hunk, usize), P
         }
         if parsed_lines == 1 {
             return Err(InvalidHunkError {
-                message: format!("Add file hunk for path '{path}' is empty"),
+                message: format_agent_error(
+                    "parse.add_file.empty",
+                    "content lines must start immediately after the header, and every file line, including blank lines, must begin with '+'",
+                    format!("Add file hunk for path '{path}' is empty"),
+                ),
                 line_number,
             });
         }
@@ -268,8 +276,23 @@ fn parse_one_hunk(lines: &[&str], line_number: usize) -> Result<(Hunk, usize), P
         }
 
         if chunks.is_empty() {
+            let (tag, hint) = if move_path.is_some() {
+                (
+                    "parse.update_file.empty_after_move",
+                    "after '*** Move to:' the patch still needs a non-empty '@@' hunk; for a pure rename, the current format requires at least one context line",
+                )
+            } else {
+                (
+                    "parse.update_file.empty",
+                    "an update hunk must contain a non-empty '@@' section with context, additions, or removals",
+                )
+            };
             return Err(InvalidHunkError {
-                message: format!("Update file hunk for path '{path}' is empty"),
+                message: format_agent_error(
+                    tag,
+                    hint,
+                    format!("Update file hunk for path '{path}' is empty"),
+                ),
                 line_number,
             });
         }
@@ -299,7 +322,11 @@ fn parse_update_file_chunk(
 ) -> Result<(UpdateFileChunk, usize), ParseError> {
     if lines.is_empty() {
         return Err(InvalidHunkError {
-            message: "Update hunk does not contain any lines".to_string(),
+            message: format_agent_error(
+                "parse.update_chunk.empty",
+                "start the chunk with '@@' or '@@ <context>' and include at least one context, added, or removed line after it",
+                "Update hunk does not contain any lines",
+            ),
             line_number,
         });
     }
@@ -310,9 +337,13 @@ fn parse_update_file_chunk(
     } else {
         if !allow_missing_context {
             return Err(InvalidHunkError {
-                message: format!(
-                    "Expected update hunk to start with a @@ context marker, got: '{}'",
-                    lines[0]
+                message: format_agent_error(
+                    "parse.update_chunk.missing_context_marker",
+                    "start each non-initial update chunk with '@@' or '@@ <context>' before any ' ', '+', or '-' lines",
+                    format!(
+                        "Expected update hunk to start with a @@ context marker, got: '{}'",
+                        lines[0]
+                    ),
                 ),
                 line_number,
             });
@@ -321,7 +352,11 @@ fn parse_update_file_chunk(
     };
     if start_index >= lines.len() {
         return Err(InvalidHunkError {
-            message: "Update hunk does not contain any lines".to_string(),
+            message: format_agent_error(
+                "parse.update_chunk.empty",
+                "after '@@' include at least one context, added, or removed line",
+                "Update hunk does not contain any lines",
+            ),
             line_number: line_number + 1,
         });
     }
@@ -337,7 +372,11 @@ fn parse_update_file_chunk(
             EOF_MARKER => {
                 if parsed_lines == 0 {
                     return Err(InvalidHunkError {
-                        message: "Update hunk does not contain any lines".to_string(),
+                        message: format_agent_error(
+                            "parse.update_chunk.empty",
+                            "'*** End of File' can appear only after at least one context, added, or removed line in the chunk",
+                            "Update hunk does not contain any lines",
+                        ),
                         line_number: line_number + 1,
                     });
                 }
@@ -364,8 +403,12 @@ fn parse_update_file_chunk(
                     _ => {
                         if parsed_lines == 0 {
                             return Err(InvalidHunkError {
-                                message: format!(
-                                    "Unexpected line found in update hunk: '{line_contents}'. Every line should start with ' ' (context line), '+' (added line), or '-' (removed line)"
+                                message: format_agent_error(
+                                    "parse.update_chunk.invalid_line",
+                                    "after '@@', every payload line must start with ' ' for context, '+' for additions, or '-' for removals",
+                                    format!(
+                                        "Unexpected line found in update hunk: '{line_contents}'. Every line should start with ' ' (context line), '+' (added line), or '-' (removed line)"
+                                    ),
                                 ),
                                 line_number: line_number + 1,
                             });
@@ -449,8 +492,40 @@ mod tests {
     #[test]
     fn test_parse_empty_add_file_rejected() {
         let patch = "*** Begin Patch\n*** Add File: empty.txt\n*** End Patch";
-        let result = parse_patch(patch);
-        assert!(matches!(result, Err(ParseError::InvalidHunkError { .. })));
+        let err = parse_patch(patch).unwrap_err();
+        match err {
+            ParseError::InvalidHunkError { message, .. } => {
+                assert!(message.contains("tag: parse.add_file.empty"));
+                assert!(message.contains("must begin with '+'"));
+            }
+            _ => panic!("expected InvalidHunkError"),
+        }
+    }
+
+    #[test]
+    fn test_parse_empty_update_after_move_has_hint() {
+        let patch = "*** Begin Patch\n*** Update File: src.txt\n*** Move to: dst.txt\n*** End Patch";
+        let err = parse_patch(patch).unwrap_err();
+        match err {
+            ParseError::InvalidHunkError { message, .. } => {
+                assert!(message.contains("tag: parse.update_file.empty_after_move"));
+                assert!(message.contains("pure rename"));
+            }
+            _ => panic!("expected InvalidHunkError"),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_update_line_has_hint() {
+        let patch = "*** Begin Patch\n*** Update File: src.txt\n@@\nwat\n*** End Patch";
+        let err = parse_patch(patch).unwrap_err();
+        match err {
+            ParseError::InvalidHunkError { message, .. } => {
+                assert!(message.contains("tag: parse.update_chunk.invalid_line"));
+                assert!(message.contains("must start with ' '"));
+            }
+            _ => panic!("expected InvalidHunkError"),
+        }
     }
 
     #[test]

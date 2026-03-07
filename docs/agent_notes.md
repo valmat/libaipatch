@@ -86,7 +86,7 @@ possible symlink or filesystem race corner cases.
 - patch text must be valid UTF-8;
 - `root_dir` must be valid UTF-8;
 - target files are treated as UTF-8 text files;
-- binary or non-UTF-8 file workflows are out of scope for v1.
+- binary or non-UTF-8 file workflows are out of scope for v1 and are rejected with `AIPATCH_UNSUPPORTED`.
 
 The implementation follows the upstream `codex` behavior of ensuring a trailing
 newline in resulting text files.
@@ -130,7 +130,7 @@ When generating patches for this library:
 
 - always emit the full `*** Begin Patch` / `*** End Patch` envelope;
 - keep file paths relative to `root_dir`;
-- use `Add File` only for new file content;
+- use `Add File` only when the target file does not already exist;
 - use `Update File` when modifying existing files;
 - use `Move to` only inside an `Update File` hunk;
 - include enough nearby context to make matching unambiguous;

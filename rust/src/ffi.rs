@@ -16,7 +16,7 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::errors::{AIPATCH_INVALID_ARGUMENT, AIPATCH_OK};
 #[cfg(test)]
-use crate::errors::AIPATCH_PATH_VIOLATION;
+use crate::errors::{AIPATCH_PATH_VIOLATION, AIPATCH_UNSUPPORTED};
 
 pub const ABI_VERSION: c_int = 1;
 pub const LIB_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
@@ -355,6 +355,36 @@ mod tests {
         assert_eq!(out.code, AIPATCH_INVALID_ARGUMENT);
         let message = unsafe { CStr::from_ptr(out.message) }.to_str().unwrap().to_owned();
         assert!(message.contains("patch is not valid UTF-8"));
+        unsafe { aipatch_result_free(&mut out) };
+    }
+
+    #[test]
+    fn test_non_utf8_target_file_is_reported_as_unsupported() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("f.txt"), [0xff, 0xfe, 0xfd]).unwrap();
+
+        let patch = CString::new("*** Begin Patch\n*** Update File: f.txt\n@@\n-old\n+new\n*** End Patch").unwrap();
+        let root = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let mut out = AipatchResult {
+            code: -1,
+            message: std::ptr::null_mut(),
+            message_len: 999,
+        };
+
+        let rc = unsafe {
+            aipatch_check(
+                patch.as_ptr(),
+                patch.as_bytes().len(),
+                root.as_ptr(),
+                root.as_bytes().len(),
+                &mut out,
+            )
+        };
+
+        assert_eq!(rc, 0);
+        assert_eq!(out.code, AIPATCH_UNSUPPORTED);
+        let message = unsafe { CStr::from_ptr(out.message) }.to_str().unwrap().to_owned();
+        assert!(message.contains("non-UTF-8"));
         unsafe { aipatch_result_free(&mut out) };
     }
 

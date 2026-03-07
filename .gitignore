@@ -56,3 +56,5 @@ docs.json
 *.tmp
 *.temp
 /tmp-*/
+*.txt
+

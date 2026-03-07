@@ -39,6 +39,8 @@ All paths are interpreted relative to `root_dir`.
 
 `Add File` creates a new text file from lines prefixed with `+`.
 
+If the target path already exists as a file, the patch is rejected.
+
 Example:
 
 ```text
@@ -194,8 +196,10 @@ A patch is rejected when:
 - the begin/end markers are missing;
 - a hunk header is malformed;
 - an `Add File` hunk has no `+` lines;
+- an `Add File` target file already exists;
 - an `Update File` hunk is empty;
 - target context cannot be found in the current file;
+- a target file is binary or is not valid UTF-8 text;
 - a referenced file does not exist for `Update File` or `Delete File`;
 - a path violates the library path policy.
 

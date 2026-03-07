@@ -22,7 +22,9 @@ fn upstream_scenarios_match_expected_filesystem_state() -> Result<(), Box<dyn st
 
         let scenario_name = entry.file_name();
         let scenario_name = scenario_name.to_string_lossy();
-        if scenario_name.starts_with("015_") {
+        if scenario_name.starts_with("011_") || scenario_name.starts_with("015_") {
+            // 011 differs intentionally: libaipatch rejects Add File over an existing file.
+            // 015 differs intentionally: v1 does not promise full rollback after commit starts.
             continue;
         }
 
