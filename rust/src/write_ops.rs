@@ -45,6 +45,11 @@ pub(crate) fn commit_update(
 
     let tmp_path = write_to_tempfile(dest_dir, new_content)?;
 
+    // Preserve original file permissions.
+    let original_permissions = std::fs::metadata(path)
+        .map(|m| m.permissions())
+        .ok();
+
     // Rename temp → destination.
     std::fs::rename(&tmp_path, dest).map_err(|e| {
         // Clean up temp file on failure.
@@ -57,6 +62,12 @@ pub(crate) fn commit_update(
             e,
         )
     })?;
+
+    // Restore original file permissions after rename.
+    if let Some(perms) = original_permissions {
+        std::fs::set_permissions(dest, perms)
+            .map_err(|e| io_error(format!("restore permissions for {}", dest.display()), e))?;
+    }
 
     // If this was a move, remove the original source.
     if move_path.is_some() {
