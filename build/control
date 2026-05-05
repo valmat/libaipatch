@@ -1,7 +1,7 @@
 Package: %PACKAGE_NAME%
 Source: libaipatch
 Version: %VERSION%
-Maintainer: valmat <v.dmitriev@pnlfin.tech>
+Maintainer: valmat <ufabiz@gmail.com>
 Architecture: %ARCHITECTURE%
 Section: libdevel
 Priority: optional
